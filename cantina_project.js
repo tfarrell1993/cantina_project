@@ -27,14 +27,108 @@ mainLoop = data => {
     if (selector === 'quit' || selector === 'q') {
       return process.exit();
     }
-    const selectors = parseSelectorString(selector);
-    
-    console.log(selectors);
+    const selectors = selector.split(' ');
+    selectors.forEach(sequence => {
+      const parsedSequence = parseSelectorString(sequence);
+      parsedSequence.classNames = parsedSequence.classNames.filter((name, index, self) => {
+        // remove any duplicate classnames
+        return index === self.indexOf(name);
+      });
+      crawlDataTree(({data, parsedSequence}));
+    });
     rl.close();
     mainLoop(data);
   });
 };
 
+/**
+ * Helper function to traverse the JSON object and log any objects that match our parameters
+ *
+ * @param data the JSON object we're traversing
+ * @param sequence the object containing the sequence we're matching on
+ *
+ * @return null
+ */
+const crawlDataTree = ({data, parsedSequence: {baseClass, classNames, identifier}}) => {
+  // class and identifier selectors are always strings, so we just check to see if they're defined
+  // if they are, we need to do some additional work for classNames since they're an array
+  // We use bracket reference here since class is a restricted term and can lead to some funny behaviors
+  if ((strCompare(baseClass, null) ? true : strCompare(baseClass, data.class))
+    && (strCompare(identifier, null) ? true : strCompare(identifier, data.identifier))) {
+    const tempClasses = [...classNames];
+    if (data.classNames !== undefined) {
+      data.classNames.forEach(name => {
+        if (tempClasses.indexOf(name) > -1) {
+          tempClasses.splice(tempClasses.indexOf(name), 1);
+        }
+      });
+    }
+    if (tempClasses.length < 1) {
+      // We have no classes to check that weren't present in the data.className
+      console.log(data);
+    }
+  }
+
+  if (data.subviews !== undefined && data.subviews.length > 0) {
+    data.subviews.forEach(view => crawlDataTree({
+      data: view,
+      parsedSequence: {
+        baseClass,
+        classNames,
+        identifier
+      }
+    }));
+  }
+
+  if (data.contentView !== undefined && data.contentView.subviews !== undefined && data.contentView.subviews.length > 0) {
+    data.contentView.subviews.forEach(view => crawlDataTree({
+      data: view,
+      parsedSequence: {
+        baseClass,
+        classNames,
+        identifier
+      }
+    }));
+  }
+  
+  if (data.control !== undefined) {
+    crawlDataTree({
+      data: data.control,
+      parsedSequence: {
+        baseClass,
+        classNames,
+        identifier
+      }
+    });
+  }
+  return;
+}
+
+
+/**
+ * Helper function to compare the values of two variables of varying types when cast to string
+ *
+ * @param str1 the first variable we're casting to string
+ * @param str2 the second variable we're casting to string
+ *
+ * @return bool are the two stringified variables equal?
+ */
+const strCompare = (str1, str2) => {
+  if (str1 === undefined || str1 === null) {
+    return str2 === undefined || str2 === null;
+  } else if (str2 === undefined || str2 === null) {
+    return false;
+  }
+  return str1.toString() === str2.toString();
+}
+
+/**
+ * Helper function to turn a sequence string from the command line into a structured selector object
+ *
+ * @param selectorString the sequence needing to be parsed
+ *
+ * @return object the parsed properties of the sequence string
+ */
 const parseSelectorString = selectorString => {
   if (!selectorString) {
     return {};
