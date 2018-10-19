@@ -5,6 +5,7 @@ const https = require('https');
 const IS_SELECTOR_CAPITALIZED = /^[A-Z]/;
 const FULLSTOP_CHAR = '.';
 const HASH_CHAR = '#'
+const EQUALS_BREAKLINE = '=====================================================================';
 
 // Grab json object from QueToo repo
 https.get('https://raw.githubusercontent.com/jdolan/quetoo/master/src/cgame/default/ui/settings/SystemViewController.json', result => {
@@ -34,7 +35,13 @@ mainLoop = data => {
         // remove any duplicate classnames
         return index === self.indexOf(name);
       });
+      console.log(EQUALS_BREAKLINE);
+      console.log('Printing out matches for:');
+      console.log(parsedSequence);
+      console.log(EQUALS_BREAKLINE);
       crawlDataTree(({data, parsedSequence}));
+      
+      console.log(EQUALS_BREAKLINE);
     });
     rl.close();
     mainLoop(data);
