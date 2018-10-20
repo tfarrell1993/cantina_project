@@ -24,27 +24,96 @@ mainLoop = data => {
     output: process.stdout
   });
   
-  rl.question("Please enter a selector:  ", selector => {
-    if (selector === 'quit' || selector === 'q') {
+  rl.question("Please enter a sequence:  ", sequence => {
+    if (sequence === 'quit' || sequence === 'q') {
       return process.exit();
     }
-    const selectors = selector.split(' ');
-    selectors.forEach(sequence => {
-      const parsedSequence = parseSelectorString(sequence);
-      parsedSequence.classNames = parsedSequence.classNames.filter((name, index, self) => {
+    const selectors = [];
+    sequence.split(' ').forEach(selector => {
+      const parsedSelector = parseSelectorString(selector);
+      parsedSelector.classNames = parsedSelector.classNames.filter((name, index, self) => {
         // remove any duplicate classnames
         return index === self.indexOf(name);
       });
-      console.log(EQUALS_BREAKLINE);
-      console.log('Printing out matches for:');
-      console.log(parsedSequence);
-      console.log(EQUALS_BREAKLINE);
-      crawlDataTree(({data, parsedSequence}));
-      console.log(EQUALS_BREAKLINE);
+      selectors.push(parsedSelector);
     });
+    console.log(EQUALS_BREAKLINE);
+    console.log('Printing out matches for:');
+    console.log(selectors);
+    console.log(EQUALS_BREAKLINE);
+    doNestedCrawl(data, selectors);
+    console.log(EQUALS_BREAKLINE);
     rl.close();
     mainLoop(data);
   });
+};
+
+const doNestedCrawl = (data, selectors) => {
+  if (selectors !== undefined && selectors.length > 0) {
+    const {baseClass, classNames, identifier} = selectors[0];
+    if ((strCompare(baseClass, null) ? true : strCompare(baseClass, data.class))
+      && (strCompare(identifier, null) ? true : strCompare(identifier, data.identifier))) {
+      const tempClasses = [...classNames];
+      if (data.classNames !== undefined) {
+        data.classNames.forEach(name => {
+          if (tempClasses.indexOf(name) > -1) {
+            tempClasses.splice(tempClasses.indexOf(name), 1);
+          }
+        });
+      }
+      if (tempClasses.length < 1) {
+        selectors.shift();
+        if (selectors.length < 1) {
+          console.log(data);
+          return;
+        }
+        // All conditions for this selector have been met, let's continue crawling.
+        if (data.subviews !== undefined && data.subviews.length > 0) {
+          data.subviews.forEach(view => doNestedCrawl(
+            view,
+            selectors
+          ));
+        }
+
+        if (data.contentView !== undefined && data.contentView.subviews !== undefined && data.contentView.subviews.length > 0) {
+          data.contentView.subviews.forEach(view => doNestedCrawl(
+            view,
+            selectors
+          ));
+        }
+        
+        if (data.control !== undefined) {
+          doNestedCrawl(
+            data.control,
+            selectors
+          );
+        }
+      }
+    }
+    
+    if (data.subviews !== undefined && data.subviews.length > 0) {
+      data.subviews.forEach(view => doNestedCrawl(
+        view,
+        selectors
+      ));
+    }
+
+    if (data.contentView !== undefined && data.contentView.subviews !== undefined && data.contentView.subviews.length > 0) {
+      data.contentView.subviews.forEach(view => doNestedCrawl(
+        view,
+        selectors
+      ));
+    }
+    
+    if (data.control !== undefined) {
+      doNestedCrawl(
+        data.control,
+        selectors
+      );
+    }
+  }
+  
+  return;
 };
 
 /**
