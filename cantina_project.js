@@ -1,5 +1,4 @@
 const readline = require('readline');
-const fs = require('fs');
 const https = require('https');
 
 const IS_SELECTOR_CAPITALIZED = /^[A-Z]/;
