@@ -9,6 +9,10 @@ const EQUALS_BREAKLINE = '======================================================
 
 // Grab json object from QueToo repo
 https.get('https://raw.githubusercontent.com/jdolan/quetoo/master/src/cgame/default/ui/settings/SystemViewController.json', result => {
+  if (result.statusCode !== 200) {
+    console.log(`Yikes! Failed to get JSON object from QueToo repo, status code ${result.statusCode}`);
+    process.exit();
+  };
   let data = '';
 
   result.on('data', chunk => {
@@ -18,6 +22,13 @@ https.get('https://raw.githubusercontent.com/jdolan/quetoo/master/src/cgame/defa
   result.on('end', () => mainLoop(JSON.parse(data)));
 });
 
+/**
+ * The main REPL for the project
+ *
+ * @param data the json object we recieved from the server
+ *
+ * @return exit();
+ */
 mainLoop = data => {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -41,7 +52,7 @@ mainLoop = data => {
     console.log('Printing out matches for:');
     console.log(selectors);
     console.log(EQUALS_BREAKLINE);
-    doNestedCrawl(data, selectors);
+    crawlDataTree({data, parsedSequence: selectors[0], fullSequence: selectors});
     console.log(EQUALS_BREAKLINE);
     rl.close();
     mainLoop(data);
@@ -49,19 +60,20 @@ mainLoop = data => {
 };
 
 /**
- * Helper function to traverse the JSON object and log any objects that match our parameters
+ * Helper function for matching on nested selectors
  *
- * @param data the JSON object we're traversing
- * @param selectors the array containing the sequence we're matching on
+ * @param data the sub-tree of the main JSON object we're checking
+ * @param selectors the remainder of the sequence we're matching on
  *
  * @return null
  */
 const doNestedCrawl = (data, selectors) => {
-  if (Array.isArray(selectors) && selectors.length > 0) {
+  if (Array.isArray(selectors) && selectors.length) {
     const {baseClass, classNames, identifier} = selectors[0];
     if ((strCompare(baseClass, null) ? true : strCompare(baseClass, data.class))
       && (strCompare(identifier, null) ? true : strCompare(identifier, data.identifier))) {
       const tempClasses = [...classNames];
+      const tempSelectors = [...selectors];
       if (data.classNames !== undefined) {
         data.classNames.forEach(name => {
           if (tempClasses.indexOf(name) > -1) {
@@ -69,60 +81,120 @@ const doNestedCrawl = (data, selectors) => {
           }
         });
       }
-      if (tempClasses.length < 1) {
-        selectors.shift();
-        if (selectors.length < 1) {
+      if (!tempClasses.length) {
+        tempSelectors.shift();
+        if (!tempSelectors.length) {
           console.log(data);
           return;
         }
         // All conditions for this selector have been met, let's continue crawling.
-        if (Array.isArray(data.subviews) && data.subviews.length > 0) {
+        if (Array.isArray(data.subviews) && data.subviews.length) {
           data.subviews.forEach(view => doNestedCrawl(
             view,
-            selectors
+            tempSelectors
           ));
         }
 
-        if (Array.isArray(data.contentView) && Array.isArray(data.contentView.subviews) && data.contentView.subviews.length > 0) {
+        if (Array.isArray(data.contentView)
+          && Array.isArray(data.contentView.subviews)
+          && data.contentView.subviews.length) {
           data.contentView.subviews.forEach(view => doNestedCrawl(
             view,
-            selectors
+            tempSelectors
           ));
         }
         
         if (data.control) {
           doNestedCrawl(
             data.control,
-            selectors
+            tempSelectors
           );
         }
       }
-    }
-    
-    if (Array.isArray(data.subviews) && data.subviews.length > 0) {
-      data.subviews.forEach(view => doNestedCrawl(
-        view,
-        selectors
-      ));
-    }
-
-    if (Array.isArray(data.contentView) && Array.isArray(data.contentView.subviews) && data.contentView.subviews.length > 0) {
-      data.contentView.subviews.forEach(view => doNestedCrawl(
-        view,
-        selectors
-      ));
-    }
-    
-    if (data.control) {
-      doNestedCrawl(
-        data.control,
-        selectors
-      );
     }
   }
   
   return;
 };
+
+/**
+ * Primary crawler to traverse the JSON object. Only logs output in cases with no nested selector,
+ * in those cases doNestedCrawl() handles output
+ *
+ * @param data the JSON object we're traversing
+ * @param parsedSequence the object containing the sequence we're matching on
+ * @param fullSequence the complete sequence obtained from the command line
+ *
+ * @return null
+ */
+const crawlDataTree = ({data, parsedSequence: {baseClass, classNames, identifier}, fullSequence}) => {
+  // class and identifier selectors are always strings, so we just check to see if they're defined
+  // if they are, we need to do some additional work for classNames since they're an array
+  // We use bracket reference here since class is a restricted term and can lead to some funny behaviors
+  if ((strCompare(baseClass, null) ? true : strCompare(baseClass, data.class))
+    && (strCompare(identifier, null) ? true : strCompare(identifier, data.identifier))) {
+    const tempClasses = [...classNames];
+    const tempSequence = [...fullSequence];
+    if (data.classNames !== undefined) {
+      data.classNames.forEach(name => {
+        if (tempClasses.indexOf(name) > -1) {
+          tempClasses.splice(tempClasses.indexOf(name), 1);
+        }
+      });
+    }
+    if (!tempClasses.length) {
+      // We have no classes to check that weren't present in the data.className
+      tempSequence.shift();
+      if (!tempSequence.length) {
+        // It's a match, and we don't need to do any more
+        console.log(data);
+      } else {
+        // Time to start doing our nested check!
+        doNestedCrawl(data, tempSequence);
+      }
+    }
+  }
+
+  if (Array.isArray(data.subviews) && data.subviews.length) {
+    data.subviews.forEach(view => crawlDataTree({
+      data: view,
+      parsedSequence: {
+        baseClass,
+        classNames,
+        identifier
+      },
+      fullSequence
+    }));
+  }
+
+  if (Array.isArray(data.contentView)
+    && Array.isArray(data.contentView.subviews)
+    && data.contentView.subviews.length) {
+    data.contentView.subviews.forEach(view => crawlDataTree({
+      data: view,
+      parsedSequence: {
+        baseClass,
+        classNames,
+        identifier
+      },
+      fullSequence
+    }));
+  }
+  
+  if (data.control) {
+    crawlDataTree({
+      data: data.control,
+      parsedSequence: {
+        baseClass,
+        classNames,
+        identifier
+      },
+      fullSequence
+    });
+  }
+  return;
+}
+
 
 /**
  * Helper function to compare the values of two variables of varying types when cast to string
